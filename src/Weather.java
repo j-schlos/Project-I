@@ -4,7 +4,13 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
+import java.util.List;
+import java.util.Objects;
 import java.util.Scanner;
+
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.*;
 
 public class Weather extends Singleton{
     private static Weather instance = null;
@@ -19,16 +25,7 @@ public class Weather extends Singleton{
     }
 
     private String urlBuilder(String baseUrl, String urlAppend, String apikey, String query){
-        StringBuilder sb = new StringBuilder();
-        sb.append(baseUrl);
-        sb.append(urlAppend);
-        sb.append("?key=");
-        sb.append(apikey);
-        sb.append("&q=");
-        sb.append(query);
-        sb.append("&aqi=no");
-
-        return sb.toString();
+        return baseUrl + urlAppend + "?key=" + apikey + "&q=" + query + "&aqi=no";
     }
 
     public static synchronized Weather getInstance(){
@@ -37,11 +34,10 @@ public class Weather extends Singleton{
         return instance;
     }
 
-    private HttpURLConnection createConnection(String query) throws IOException{
+    private HttpURLConnection createConnection(String urlAppend, String query) throws IOException{
         try {
-            this.url = new URL(urlBuilder(BASE_URL, CURRENT_URL_APPEND, API_KEY, query));
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            return conn;
+            this.url = new URL(urlBuilder(BASE_URL, urlAppend, API_KEY, query));
+            return (HttpURLConnection) this.url.openConnection();
         } catch (MalformedURLException e) {
             throw new RuntimeException(e);
         }
@@ -59,6 +55,57 @@ public class Weather extends Singleton{
         }
     }
 
+    private String getJSONValue(JSONObject object, String key){
+        JSONObject currentObject = object;
+        if(key.contains(":")){
+            String[] keySplit = key.split(":", 2);
+            currentObject = (JSONObject) currentObject.get(keySplit[0]);
+            return getJSONValue(currentObject, keySplit[1]);
+        }
+        Object o = currentObject.get(key);
+        return o.toString();
+    }
+
+    private String stringAssembler(String fieldName, JSONObject jsonObject, String jsonKey, String units){
+        return "\t" + fieldName + ": " + getJSONValue(jsonObject, jsonKey) + " " + units + "\r\n";
+    }
+
+    private String stringAssembler(String fieldName, JSONObject jsonObject, String jsonKey){
+        return stringAssembler(fieldName, jsonObject, jsonKey, "");
+    }
+
+    private String parseJSONResponseData(String responseData){
+        String parsed = "\r\n";
+        try{
+            JSONObject jsonObject = (JSONObject) new JSONParser().parse(responseData);
+            parsed += "\t\t\t[LOCATION INFO]\r\n";
+            parsed += stringAssembler("Country", jsonObject, "location:country");
+            parsed += stringAssembler("Region", jsonObject, "location:region");
+            parsed += stringAssembler("City", jsonObject, "location:name");
+            parsed += "\r\n\t\t\t[WEATHER INFO]\r\n";
+            parsed += "\t--------Temperature----------\r\n";
+            parsed += stringAssembler("Current Temperature", jsonObject, "current:temp_c", "°C");
+            parsed += stringAssembler("Perceived Temperature", jsonObject, "current:feelslike_c", "°C");
+            parsed += "\t--------Other Info-----------\r\n";
+            parsed += stringAssembler("Weather Condition", jsonObject, "current:condition:text");
+            parsed += stringAssembler("UV Index", jsonObject, "current:uv");
+            parsed += stringAssembler("Pressure", jsonObject, "current:pressure_mb", "mbar");
+            parsed += stringAssembler("Humidity", jsonObject, "current:humidity", "%");
+            parsed += stringAssembler("Precipitation amount", jsonObject, "current:precip_mm", "mm");
+            parsed += "\t---------Wind Info-----------\r\n";
+            parsed += stringAssembler("Wind Speed", jsonObject, "current:wind_kph", "km/h");
+            parsed += stringAssembler("Wind Direction", jsonObject, "current:wind_dir");
+            parsed += stringAssembler("Wind Degrees", jsonObject, "current:wind_degree", "°");
+            parsed += stringAssembler("Wind Gust", jsonObject, "current:gust_kph", "km/h");
+            parsed += "\r\n\t\t\t[TIME INFO]\r\n";
+            parsed += stringAssembler("Timezone name", jsonObject, "location:tz_id");
+            parsed += stringAssembler("Local Time", jsonObject, "location:localtime");
+            parsed += stringAssembler("Weather Info Last Update Time:", jsonObject, "current:last_updated");
+        } catch(ParseException e){
+            throw new RuntimeException(e);
+        }
+        return parsed;
+    }
     private String getResponseData() throws IOException{
         StringBuilder sb = new StringBuilder();
         InputStream inputStream = url.openStream();
@@ -68,17 +115,12 @@ public class Weather extends Singleton{
         }
         scanner.close();
         inputStream.close();
-        return sb.toString();
-    }
-
-    private String parseResponseData(){
-        //TODO zpracovat json, který přijde v response
-        return null;
+        return parseJSONResponseData(sb.toString());
     }
 
     public String getCurrentWeather(String query){
         try {
-            HttpURLConnection connection = createConnection(query);
+            HttpURLConnection connection = createConnection(CURRENT_URL_APPEND, query);
             sendGetRequest(connection);
             return getResponseData();
         } catch (IOException e){
