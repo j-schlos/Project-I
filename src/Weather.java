@@ -16,6 +16,7 @@ public class Weather extends Singleton{
     private static Weather instance = null;
     private static final String BASE_URL = "http://api.weatherapi.com/v1";
     private static final String CURRENT_URL_APPEND = "/current.json";
+    private static final String FORECAST_URL_APPEND = "/forecast.json";
     private static final String API_KEY = "d2dd28c8913e46a2b1c162759232812";
 
     private URL url = null;
@@ -24,19 +25,36 @@ public class Weather extends Singleton{
 
     }
 
-    private String urlBuilder(String baseUrl, String urlAppend, String apikey, String query){
-        return baseUrl + urlAppend + "?key=" + apikey + "&q=" + query + "&aqi=no";
-    }
-
     public static synchronized Weather getInstance(){
         if (instance == null)
             instance = new Weather();
         return instance;
     }
 
+    private String urlBuilder(String baseUrl, String urlAppend, String apikey, String query){
+        return baseUrl + urlAppend + "?key=" + apikey + "&q=" + query + "&aqi=no";
+    }
+
+    private String urlBuilder(String baseUrl, String urlAppend, String apikey, String query, int days, String alerts){
+        if(days < 1 || days > 10)
+            throw new IndexOutOfBoundsException("Entered number of days is not in valid range (1-10 is valid)");
+        if(!alerts.toLowerCase().equals("no") || !alerts.toLowerCase().equals("yes"))
+            alerts = "no";
+
+        return urlBuilder(baseUrl, urlAppend, apikey, query) + "&days=" + days + "&alerts=" + alerts;
+    }
+
     private HttpURLConnection createConnection(String urlAppend, String query) throws IOException{
         try {
             this.url = new URL(urlBuilder(BASE_URL, urlAppend, API_KEY, query));
+            return (HttpURLConnection) this.url.openConnection();
+        } catch (MalformedURLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    private HttpURLConnection createConnection(String urlAppend, String query, int days, String alerts) throws IOException{
+        try {
+            this.url = new URL(urlBuilder(BASE_URL, urlAppend, API_KEY, query, days, alerts));
             return (HttpURLConnection) this.url.openConnection();
         } catch (MalformedURLException e) {
             throw new RuntimeException(e);
@@ -121,6 +139,18 @@ public class Weather extends Singleton{
     public String getCurrentWeather(String query){
         try {
             HttpURLConnection connection = createConnection(CURRENT_URL_APPEND, query);
+            sendGetRequest(connection);
+            return getResponseData();
+        } catch (IOException e){
+            throw new RuntimeException(e);
+        } catch (MyRequestException e){
+            return e.getMessage();
+        }
+    }
+
+    public String getWeatherForecast(String query, int days, String alerts){
+        try {
+            HttpURLConnection connection = createConnection(CURRENT_URL_APPEND, query, days, alerts);
             sendGetRequest(connection);
             return getResponseData();
         } catch (IOException e){
