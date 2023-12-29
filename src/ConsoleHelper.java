@@ -42,4 +42,9 @@ public class ConsoleHelper extends Singleton{
         return readString();
     }
 
+    public int readInt(String message) {
+        String input = readString(message);
+        return Integer.parseInt(input);
+    }
+
 }
